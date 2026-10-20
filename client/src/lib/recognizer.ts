@@ -1,61 +1,63 @@
-// src/lib/recognizer.ts
-/**
- * Recognizer interface – abstracts the sign‑language model.
- * The concrete implementation can be swapped without touching the UI.
- */
+
 export interface Recognizer {
-  /** Load any heavy assets (e.g., ONNX model). */
   init(): Promise<void>;
-  /**
-   * Predict a sign label from a flattened frame buffer.
-   * @param window Float32Array of length 30*126 (30 frames of 126 numbers)
-   * @returns label and confidence. "IDLE" indicates no sign detected.
-   */
-  predict(window: Float32Array): Promise<{ label: string; confidence: number }>;
+  predict(
+    frame: Float32Array
+  ): Promise<{ label: string; confidence: number }>;
 }
 
-/** Sample list of mock signs */
-const MOCK_SIGNS = [
-  "HELLO",
-  "ME",
-  "NAME",
-  "THANK-YOU",
-  "YES",
-  "NO",
-  "HELP",
-  "WATER",
-  "PLEASE",
-];
+const API_URL = "http://127.0.0.1:8000/predict";
 
-/** Simple mock recognizer – reacts to number keys 1‑9 */
-class MockRecognizer implements Recognizer {
-  private lastKey: number | null = null;
+const SESSION_ID = `signbridge-${Date.now()}-${Math.random()
+  .toString(36)
+  .slice(2)}`;
 
-  async init() {
-    // Attach a keyboard listener for quick testing.
-    window.addEventListener("keydown", (e) => {
-      const num = parseInt(e.key);
-      if (!isNaN(num) && num >= 1 && num <= MOCK_SIGNS.length) {
-        this.lastKey = num;
-      }
-    });
+class PythonRecognizer implements Recognizer {
+  async init(): Promise<void> {
+    // The Python API does not provide a GET / health-check endpoint.
+    // The first prediction request will test the connection.
+    return Promise.resolve();
   }
 
-  async predict(_: Float32Array) {
-    if (this.lastKey) {
-      const label = MOCK_SIGNS[this.lastKey - 1];
-      this.lastKey = null; // consume the key
-      return { label, confidence: 0.9 };
+  async predict(
+    frame: Float32Array
+  ): Promise<{ label: string; confidence: number }> {
+    if (frame.length !== 126) {
+      throw new Error(
+        `Expected 126 features, received ${frame.length}`
+      );
     }
-    return { label: "IDLE", confidence: 0 };
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        session: SESSION_ID,
+        features: Array.from(frame),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Python API returned HTTP ${response.status}`
+      );
+    }
+
+    const result = await response.json();
+
+    if (result.error) {
+      throw new Error(result.error);
+    }
+
+    return {
+      label: result.label ?? "IDLE",
+      confidence: Number(result.confidence ?? 0),
+    };
   }
 }
 
-/**
- * Factory – returns the recognizer used by the app.
- * Replace the body to return an OnnxRecognizer (or any other) later.
- */
 export function getRecognizer(): Recognizer {
-  // TODO: swap for real model implementation.
-  return new MockRecognizer();
+  return new PythonRecognizer();
 }
