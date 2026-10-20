@@ -1,0 +1,15 @@
+{
+  "name": "signbridge",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm --workspace client run dev",
+    "server": "npm --workspace server start",
+    "build": "npm --workspace client run build",
+    "start": "npm run server & npm run dev"
+  }
+}
